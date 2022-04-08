@@ -10,7 +10,7 @@
 /* Initialize network parameters */
 const char* ssid = "ESP32_SSID";
 const char* password = "12345678";
-const char* host = "192.168.1.4"; /* as specified in server.ino */
+const char* host = "192.168.1.10"; /* as specified in server.ino */
 
 /* Set up the client objet */
 WiFiClient client;
@@ -27,7 +27,7 @@ uint8_t buffer_m[6];
 
 int16_t ax, ay, az;
 int16_t gx, gy, gz;
-int16_t   mx, my, mz;
+int16_t mx, my, mz;
 
 float heading;
 float tiltheading;
@@ -56,6 +56,11 @@ volatile int mz_min = 0;
 const int sleepTimeSeconds = 1;
 
 void setup() {
+  delay(5000);
+  pinMode(LED_BUILTIN, OUTPUT);
+  
+  Serial.begin(115200);
+  
   /* Join I2C bus (I2Cdev library doesn't do this automatically) */
   Wire.begin();
 
@@ -63,17 +68,18 @@ void setup() {
   Serial.println("Initializing I2C devices...");
   accelgyro.initialize();
 
+  Serial.print("DEVICE ID: ");
+  Serial.println(accelgyro.getDeviceID(), HEX);
+
   /* Verify connection */
   Serial.println("Testing device connections...");
   Serial.println(accelgyro.testConnection() ? "Success" : "Failed ");
 
-  Serial.print("Calibrating...");
+  Serial.println("Calibrating...");
   Mxyz_init_calibrated();
   
   /* Connect to the server */
-  WiFi.begin(ssid,password);
-   
-  Serial.begin(115200);
+  WiFi.begin(ssid, password);
   
   while(WiFi.status() != WL_CONNECTED) {
     Serial.print(".");
@@ -81,7 +87,8 @@ void setup() {
   }
   
   Serial.println();
-  Serial.print("IP Address (AP): "); Serial.println(WiFi.localIP());
+  Serial.print("IP Address (AP): ");
+  Serial.println(WiFi.localIP());
 }
 
 void loop() {
@@ -91,29 +98,42 @@ void loop() {
   getCompassDate_calibrated(); /* compass data has been calibrated here */
   getHeading();       /* before we use this function we should run 'getCompassDate_calibrated()' frist, so that we can get calibrated data ,then we can get correct angle */
   getTiltHeading();
+
+  Serial.println("Acceleration(g) of x,y,z:");
+  Serial.print(Axyz[0]);
+  Serial.print(", ");
+  Serial.print(Axyz[1]);
+  Serial.print(", ");
+  Serial.print(Axyz[2]);
   
-  /* Connect to the server and send the data as a URL parameter */
-  if(client.connect(host,80)) {
-    String url = "/update?value=";
-    url += String(Axyz[0]);
-    client.print(String("GET ") + url + " HTTP/1.1\r\n" + "Host: " + host +  "\r\n" + 
-                 "Connection: keep-alive\r\n\r\n"); /* minimum set of required URL headers */
-    delay(10);
-    
-    /* Read all the lines of the response and print them to Serial */
-    Serial.println("Response: ");
-    
-    while(client.available()){
-      String line = client.readStringUntil('\r');
-      Serial.print(line);
-    }
-  }
+  send_Server(Axyz[0], "readGX");
+  send_Server(Axyz[1], "readGY");
+  send_Server(Axyz[2], "readGX");
 
   delay(1000);
   
   /* Serial.println("ESP8266 in sleep mode"); */
   /* Time in (µs) that the ESP8266 deep sleep mode will be maintained */
   /*ESP.deepSleep(sleepTimeSeconds * 1e6);*/
+}
+
+void send_Server(float value, String dest){
+  /* Connect to the server and send the data as a URL parameter */
+  if(client.connect(host,80)) {
+    String url = "/" + dest + "?value=" + String(value);
+    client.print(String("GET ") + url + " HTTP/1.1\r\n" + "Host: " + host +  "\r\n" + 
+                 "Connection: keep-alive\r\n\r\n"); /* minimum set of required URL headers */
+    delay(10);
+    
+    /* Read all the lines of the response and print them to Serial */
+    /* Serial.println("Response: "); */
+    
+    while(client.available()){
+      String line = client.readStringUntil('\r');
+      /* Serial.print(line); */
+      blink_status();
+    }
+  }
 }
 
 
@@ -146,13 +166,13 @@ void Mxyz_init_calibrated(){
   //while(!Serial.find("ready")); 
   //Serial.println("  ");
   Serial.println("Calibrating...");
-  //Serial.println("Sample starting......");
-  //Serial.println("waiting ......");
+  Serial.println("Sample starting......");
+  Serial.println("waiting ......");
   
   get_calibration_Data();
   
   Serial.println("     ");
-  //Serial.println("compass calibration parameter ");
+  Serial.println("compass calibration parameter ");
   Serial.print(mx_centre);
   Serial.print("     ");
   Serial.print(my_centre);
@@ -238,4 +258,11 @@ void getCompassDate_calibrated (){
   Mxyz[0] = Mxyz[0] - mx_centre;
   Mxyz[1] = Mxyz[1] - my_centre;
   Mxyz[2] = Mxyz[2] - mz_centre;
+}
+
+void blink_status(){
+  digitalWrite(LED_BUILTIN, HIGH);   // turn the LED on (HIGH is the voltage level)
+  delay(150);                       // wait for a second
+  digitalWrite(LED_BUILTIN, LOW);    // turn the LED off by making the voltage LOW
+  delay(150);                       // wait for a second
 }
